@@ -4,6 +4,7 @@ use std::fs::File;
 use clap::{Arg, App, ArgMatches};
 
 const FLAG_HEADERS : &str = "headers";
+const OPTION_RECORDS : &str = "records";
 const PARAM_OBJFILE : &str = "OBJFILE";
 
 fn main() -> std::io::Result<()> {
@@ -15,8 +16,14 @@ fn main() -> std::io::Result<()> {
 
     let records = parse_records(&content);    
 
+    let mut flag_set = false;
     if args.is_present(FLAG_HEADERS) {
+        flag_set = true;
         print_headers(&records);
+    }
+
+    if !flag_set {
+        print_info(&records, &content);
     }
 
     Ok(())
@@ -33,10 +40,18 @@ fn args() -> ArgMatches {
         .short('h')
         .long(FLAG_HEADERS)
         .about("print record header information"))
+    .arg(Arg::new(OPTION_RECORDS)
+        .short('r')
+        .long(OPTION_RECORDS)
+        .takes_value(true)
+        .multiple_occurrences(true)
+        .about("print record types listed (seperated by ,)")
+    )
     .get_matches()
 }
 
 
+#[derive(PartialEq, Eq)]
 enum RecordType {
     UNKNWN,
     THEADR,
@@ -144,6 +159,8 @@ struct Record {
     //inclusive interval
     start: usize,
     end: usize,
+    //end-start, kept here for convenience
+    len: usize, 
 }
 
 fn parse_records(content: &Vec<u8>) -> Vec<Record> {
@@ -157,7 +174,7 @@ fn parse_records(content: &Vec<u8>) -> Vec<Record> {
             break;
         }
 
-        result.push(Record{record_type: RecordType::from_byte(record_type), start: ix, end: ix + record_len});
+        result.push(Record{record_type: RecordType::from_byte(record_type), start: ix + 3, end: ix + 3 + record_len, len: record_len});
         ix += record_len + 3;
     };
     result
@@ -166,10 +183,40 @@ fn parse_records(content: &Vec<u8>) -> Vec<Record> {
 fn print_headers(records : &Vec<Record>) {
     println!("Idx    Type Size");
     for (ix, record) in records.iter().enumerate() {
-        println!("{:>3} {:>7} {:04x}", ix, record.record_type.to_string(), record.end - record.start);
+        println!("{:>3} {:>7} {:04x}", ix, record.record_type.to_string(), record.len);
     }
 }
 
-// CLI:
-// omfdump => print THEADR & COMENT
-// omfdump --data=RECORDTYPE1,RECORDTYPE2 => print data part raw for each recordtype
+fn print_info(records : &Vec<Record>, bytes: &Vec<u8>) {
+    for record in records {
+        if record.record_type == RecordType::THEADR {
+            print_record_theadr(record, bytes);
+            println!();
+        } else if record.record_type == RecordType::COMENT {
+            print_record_coment(record, bytes);
+            println!();
+        }
+    }
+}
+
+//Record prints
+fn print_record_theadr(record: &Record, bytes: &Vec<u8>) {
+    println!("THEADR:");
+    let str_size = bytes[record.start] as usize;
+    let str_bytes = &bytes[record.start+1..record.start+1+str_size];
+    let str = String::from_utf8_lossy(str_bytes);
+    println!("{:>7} {}", "name", str);
+}
+
+fn print_record_coment(record: &Record, bytes: &Vec<u8>) {
+    println!("COMENT:");
+    let cmt_type = bytes[record.start];
+    let cmt_class = bytes[record.start+1];
+    let cmt_str = &bytes[record.start+2..(record.start+(record.len-3))];
+
+    println!("{:>12} {}", "NP", cmt_type & 0x80);
+    println!("{:>12} {}", "NL", cmt_type & 0x40);
+    println!("{:>12} {:x}", "class", cmt_class);
+    println!("{:>12} {}", "commentary", String::from_utf8_lossy(cmt_str));
+}
+
