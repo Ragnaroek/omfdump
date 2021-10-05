@@ -16,14 +16,22 @@ fn main() -> std::io::Result<()> {
 
     let records = parse_records(&content);    
 
-    let mut flag_set = false;
+    let mut print_default = true;
     if args.is_present(FLAG_HEADERS) {
-        flag_set = true;
+        print_default = false;
         print_headers(&records);
     }
 
-    if !flag_set {
-        print_info(&records, &content);
+    if args.is_present(OPTION_RECORDS) {
+        print_default = false;
+        let values : Vec<&str> = args.values_of(OPTION_RECORDS).unwrap().collect();
+        let types = to_record_types(values).expect("illegal record type");
+        let recs_to_print = filter_records(&records, &types);
+        print_records(recs_to_print, &content);
+    }
+
+    if print_default {
+        print_records(filter_records(&records, &vec![RecordType::THEADR, RecordType::COMENT]), &content);
     }
 
     Ok(())
@@ -43,13 +51,11 @@ fn args() -> ArgMatches {
     .arg(Arg::new(OPTION_RECORDS)
         .short('r')
         .long(OPTION_RECORDS)
-        .takes_value(true)
-        .multiple_occurrences(true)
+        .value_delimiter(',') 
         .about("print record types listed (seperated by ,)")
     )
     .get_matches()
 }
-
 
 #[derive(PartialEq, Eq)]
 enum RecordType {
@@ -152,6 +158,40 @@ impl RecordType {
             _ => "UNKNWN",
         }
     }
+
+    fn from_string(str: &str) -> RecordType {
+        match str {
+        "THEADR" => RecordType::THEADR,
+        "LHEADR" => RecordType::LHEADR,
+        "COMENT" => RecordType::COMENT,
+        "MODEND" => RecordType::MODEND,
+        "EXTDEF" => RecordType::EXTDEF,
+        "PUBDEF" => RecordType::PUBDEF,
+        "LINNUM" => RecordType::LINNUM,
+        "LNAMES" => RecordType::LNAMES,
+        "SEGDEF" => RecordType::SEGDEF,
+        "GRPDEF" => RecordType::GRPDEF,
+        "FIXUPP" => RecordType::FIXUPP,
+        "LEDATA" => RecordType::LEDATA,
+        "LIDATA" => RecordType::LIDATA,
+        "COMDEF" => RecordType::COMDEF,
+        "BAKPAT" => RecordType::BAKPAT,
+        "LEXTDEF" => RecordType::LEXTDEF,
+        "LPUBDEF" => RecordType::LPUBDEF,
+        "LCOMDEF" => RecordType::LCOMDEF,
+        "CEXTDEF" => RecordType::CEXTDEF,
+        "COMDAT" => RecordType::COMDAT,
+        "LINSYM" => RecordType::LINSYM,
+        "ALIAS" => RecordType::ALIAS,
+        "NBKPAT" => RecordType::NBKPAT,
+        "LLNAMES" => RecordType::LLNAMES,
+        "VERNUM" => RecordType::VERNUM,
+        "VENDEXT" => RecordType::VENDEXT,
+        "LIBHEAD" => RecordType::LIBHEAD,
+        "LIBEND" => RecordType::LIBEND,
+        _ => RecordType::UNKNWN,
+        }
+    }
 }
 
 struct Record {
@@ -180,6 +220,24 @@ fn parse_records(content: &Vec<u8>) -> Vec<Record> {
     result
 }
 
+fn to_record_types(names: Vec<&str>) -> Result<Vec<RecordType>, String> {
+    let mut result = Vec::with_capacity(names.len());
+    for str in names {
+        let recType = RecordType::from_string(str);
+        if recType == RecordType::UNKNWN {
+            return Err(format!("Unknown type: {}", str));
+        }
+        if !result.contains(&recType) {
+            result.push(recType);
+        }
+    }
+    return Ok(result)
+}
+
+fn filter_records<'a>(records: &'a Vec<Record>, types: &'a Vec<RecordType>) -> Vec<&'a Record> {
+    records.iter().filter(|rec| types.contains(&rec.record_type)).collect()
+}
+
 fn print_headers(records : &Vec<Record>) {
     println!("Idx    Type Size");
     for (ix, record) in records.iter().enumerate() {
@@ -187,7 +245,7 @@ fn print_headers(records : &Vec<Record>) {
     }
 }
 
-fn print_info(records : &Vec<Record>, bytes: &Vec<u8>) {
+fn print_records(records : Vec<&Record>, bytes: &Vec<u8>) {
     for record in records {
         if record.record_type == RecordType::THEADR {
             print_record_theadr(record, bytes);
@@ -196,6 +254,7 @@ fn print_info(records : &Vec<Record>, bytes: &Vec<u8>) {
             print_record_coment(record, bytes);
             println!();
         }
+         //TODO Print other records by type
     }
 }
 
