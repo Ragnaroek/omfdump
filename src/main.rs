@@ -52,12 +52,12 @@ fn args() -> ArgMatches {
         .short('r')
         .long(OPTION_RECORDS)
         .value_delimiter(',') 
-        .about("print record types listed (seperated by ,)")
+        .about("print record types listed (seperated by ,), use * for all records")
     )
     .get_matches()
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 enum RecordType {
     UNKNWN,
     THEADR,
@@ -89,6 +89,38 @@ enum RecordType {
     LIBHEAD,
     LIBEND,
 }
+
+static ALL_TYPES : [RecordType; 29] = [
+    RecordType::UNKNWN,
+RecordType::THEADR,
+RecordType::LHEADR,
+RecordType::COMENT,
+RecordType::MODEND,
+RecordType::EXTDEF,
+RecordType::PUBDEF,
+RecordType::LINNUM,
+RecordType::LNAMES,
+RecordType::SEGDEF,
+RecordType::GRPDEF,
+RecordType::FIXUPP,
+RecordType::LEDATA,
+RecordType::LIDATA,
+RecordType::COMDEF,
+RecordType::BAKPAT,
+RecordType::LEXTDEF,
+RecordType::LPUBDEF,
+RecordType::LCOMDEF,
+RecordType::CEXTDEF,
+RecordType::COMDAT,
+RecordType::LINSYM,
+RecordType::ALIAS,
+RecordType::NBKPAT,
+RecordType::LLNAMES,
+RecordType::VERNUM,
+RecordType::VENDEXT,
+RecordType::LIBHEAD,
+RecordType::LIBEND
+];
 
 impl RecordType {
     fn from_byte(u: u8) -> RecordType {
@@ -196,10 +228,11 @@ impl RecordType {
 
 struct Record {
     record_type: RecordType,
-    //inclusive interval
+    //inclusive interval, start of the record data
     start: usize,
+    //inclusive interval, end of the record data (excluding the checksum)
     end: usize,
-    //end-start, kept here for convenience
+    //end-start, kept here for convenience (does not include the checksum)
     len: usize, 
 }
 
@@ -208,13 +241,13 @@ fn parse_records(content: &Vec<u8>) -> Vec<Record> {
     let mut ix = 0;
     while ix < content.len() {
         let record_type = content[ix];
-        let record_len = ((content[ix+2] as usize) << 8) | content[ix+1] as usize;
+        let record_len = ((content[ix+2] as usize) << 8) | content[ix+1] as usize; //-1 for excluding the checksum
 
         if record_len == 0 {
             break;
         }
 
-        result.push(Record{record_type: RecordType::from_byte(record_type), start: ix + 3, end: ix + 3 + record_len, len: record_len});
+        result.push(Record{record_type: RecordType::from_byte(record_type), start: ix + 3, end: ix + 3 + (record_len-1), len: (record_len-1)});
         ix += record_len + 3;
     };
     result
@@ -223,12 +256,22 @@ fn parse_records(content: &Vec<u8>) -> Vec<Record> {
 fn to_record_types(names: Vec<&str>) -> Result<Vec<RecordType>, String> {
     let mut result = Vec::with_capacity(names.len());
     for str in names {
-        let recType = RecordType::from_string(str);
-        if recType == RecordType::UNKNWN {
+
+        if str == "*" {
+            for rec_type in &ALL_TYPES {
+                if !result.contains(rec_type) {
+                    result.push(*rec_type);
+                } 
+            }
+            break;
+        }
+
+        let rec_type = RecordType::from_string(str);
+        if rec_type == RecordType::UNKNWN {
             return Err(format!("Unknown type: {}", str));
         }
-        if !result.contains(&recType) {
-            result.push(recType);
+        if !result.contains(&rec_type) {
+            result.push(rec_type);
         }
     }
     return Ok(result)
@@ -246,21 +289,21 @@ fn print_headers(records : &Vec<Record>) {
 }
 
 fn print_records(records : Vec<&Record>, bytes: &Vec<u8>) {
+
     for record in records {
-        if record.record_type == RecordType::THEADR {
-            print_record_theadr(record, bytes);
-            println!();
-        } else if record.record_type == RecordType::COMENT {
-            print_record_coment(record, bytes);
-            println!();
+        println!("{}:", record.record_type.to_string());
+        match record.record_type {    
+            RecordType::THEADR => print_record_theadr(record, bytes),
+            RecordType::COMENT => print_record_coment(record, bytes),
+            RecordType::LNAMES => print_record_lnames(record, bytes),
+            _ => (), 
         }
-         //TODO Print other records by type
+        println!();
     }
 }
 
 //Record prints
 fn print_record_theadr(record: &Record, bytes: &Vec<u8>) {
-    println!("THEADR:");
     let str_size = bytes[record.start] as usize;
     let str_bytes = &bytes[record.start+1..record.start+1+str_size];
     let str = String::from_utf8_lossy(str_bytes);
@@ -268,7 +311,6 @@ fn print_record_theadr(record: &Record, bytes: &Vec<u8>) {
 }
 
 fn print_record_coment(record: &Record, bytes: &Vec<u8>) {
-    println!("COMENT:");
     let cmt_type = bytes[record.start];
     let cmt_class = bytes[record.start+1];
     let cmt_str = &bytes[record.start+2..(record.start+(record.len-3))];
@@ -277,5 +319,21 @@ fn print_record_coment(record: &Record, bytes: &Vec<u8>) {
     println!("{:>12} {}", "NL", cmt_type & 0x40);
     println!("{:>12} {:x}", "class", cmt_class);
     println!("{:>12} {}", "commentary", String::from_utf8_lossy(cmt_str));
+}
+
+fn print_record_lnames(record: &Record, bytes: &Vec<u8>) {
+    let mut offset = record.start;
+    let mut first = true;
+
+    while offset < record.end {
+        let name_len = bytes[offset] as usize;
+        let name_bytes = &bytes[offset+1..(offset+1+name_len)];
+        let name = String::from_utf8_lossy(name_bytes);
+        
+        println!("{:>8} {}", if first {"NAMES"} else {""}, name);
+        first = false;
+
+        offset += 1 + name_len;
+    }
 }
 
