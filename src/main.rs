@@ -304,6 +304,7 @@ fn print_records(records : Vec<&Record>, bytes: &Vec<u8>) {
             RecordType::LNAMES => print_record_lnames(record, bytes),
             RecordType::SEGDEF => print_record_segdef(record, bytes),
             RecordType::PUBDEF => print_record_pubdef(record, bytes),
+            RecordType::LEDATA => print_record_ledata(record, bytes),
             RecordType::UNKNWN => (),
             _ => println!("not implemented yet"), 
         }
@@ -446,6 +447,20 @@ fn print_record_pubdef(record: &Record, bytes: &Vec<u8>) {
     }
 }
 
+fn print_record_ledata(record: &Record, bytes: &Vec<u8>) {
+    let factor = if record.even {1} else {2};
+    let mut offset = record.start;
+
+    let seg_ix = le_value(offset, factor, bytes);
+    offset += factor;
+    let data_offset = le_value(offset, 2 * factor, bytes);
+    offset += 2 * factor;
+
+    println!("{:>19} {}", "Segment Index", seg_ix);
+    println!("{:>19} {}", "Data Offset", data_offset);
+    println!("{:>19} {}", "Data", data_excerpt(offset, record.end - offset, bytes));
+}
+
 //helper
 
 fn le_value(offset: usize, len: usize, bytes: &Vec<u8>) -> u32 {
@@ -455,4 +470,19 @@ fn le_value(offset: usize, len: usize, bytes: &Vec<u8>) -> u32 {
         r |= v << (i * 8);
     }
     r
+}
+
+fn data_excerpt(offset: usize, len: usize, bytes: &Vec<u8>) -> String {
+    let mut s : String = "[".to_string();
+    let num_ex = usize::min(len, 5);
+    for i in 0..num_ex {
+        s = format!("{}{:#04x}", &s, bytes[offset+i]);
+        if i != (num_ex-1) {
+            s = format!("{},", &s);
+        }
+    }
+    if len > num_ex {
+        s = format!("{},...", &s);
+    }
+    format!("{}] {} bytes", &s, len)    
 }
