@@ -303,6 +303,7 @@ fn print_records(records : Vec<&Record>, bytes: &Vec<u8>) {
             RecordType::COMENT => print_record_coment(record, bytes),
             RecordType::LNAMES => print_record_lnames(record, bytes),
             RecordType::SEGDEF => print_record_segdef(record, bytes),
+            RecordType::PUBDEF => print_record_pubdef(record, bytes),
             RecordType::UNKNWN => (),
             _ => println!("not implemented yet"), 
         }
@@ -315,7 +316,7 @@ fn print_record_theadr(record: &Record, bytes: &Vec<u8>) {
     let str_size = bytes[record.start] as usize;
     let str_bytes = &bytes[record.start+1..record.start+1+str_size];
     let str = String::from_utf8_lossy(str_bytes);
-    println!("{:>7} {}", "name", str);
+    println!("{:>7} {}", "Name", str);
 }
 
 fn print_record_coment(record: &Record, bytes: &Vec<u8>) {
@@ -325,8 +326,8 @@ fn print_record_coment(record: &Record, bytes: &Vec<u8>) {
 
     println!("{:>12} {}", "NP", cmt_type & 0x80);
     println!("{:>12} {}", "NL", cmt_type & 0x40);
-    println!("{:>12} {:x}", "class", cmt_class);
-    println!("{:>12} {}", "commentary", String::from_utf8_lossy(cmt_str));
+    println!("{:>12} {:x}", "Class", cmt_class);
+    println!("{:>12} {}", "Commentary", String::from_utf8_lossy(cmt_str));
 }
 
 fn print_record_lnames(record: &Record, bytes: &Vec<u8>) {
@@ -338,7 +339,7 @@ fn print_record_lnames(record: &Record, bytes: &Vec<u8>) {
         let name_bytes = &bytes[offset+1..(offset+1+name_len)];
         let name = String::from_utf8_lossy(name_bytes);
         
-        println!("{:>8} {}", if first {"names"} else {""}, name);
+        println!("{:>8} {}", if first {"Names"} else {""}, name);
         first = false;
 
         offset += 1 + name_len;
@@ -354,7 +355,7 @@ fn print_record_segdef(record: &Record, bytes: &Vec<u8>) {
     let b = (attributes & 0x02) >> 1;
     let p = attributes & 0x01;
 
-    println!("{:>19} alignment:   {} ({})", "attributes", a, segdef_alignment(a));
+    println!("{:>19} alignment:   {} ({})", "Attributes", a, segdef_alignment(a));
     println!("{:>19} combination: {} ({})", "", c, segdef_combination(c));
     println!("{:>19} big:         {}", "", b);
     println!("{:>19} p:           {}", "", p);
@@ -364,8 +365,8 @@ fn print_record_segdef(record: &Record, bytes: &Vec<u8>) {
         offset += 2;
         let frame_offset = bytes[offset];
         offset += 1;
-        println!("{:>19} {}", "frame number", frame_number);
-        println!("{:>19} {}", "offset", frame_offset);
+        println!("{:>19} {}", "Frame Number", frame_number);
+        println!("{:>19} {}", "Offset", frame_offset);
     }
 
     let seg_len = le_value(offset, 2 * factor, bytes);
@@ -376,10 +377,10 @@ fn print_record_segdef(record: &Record, bytes: &Vec<u8>) {
     offset += 1;
     let overlay_name_ix = le_value(offset, 1*factor, bytes);
 
-    println!("{:>19} {}", "length", seg_len);
-    println!("{:>19} {}", "seg name index", seg_name_ix);
-    println!("{:>19} {}", "class name index", class_name_ix);
-    println!("{:>19} {}", "overlay name index", overlay_name_ix);
+    println!("{:>19} {}", "Length", seg_len);
+    println!("{:>19} {}", "Seg Name Index", seg_name_ix);
+    println!("{:>19} {}", "Class Name Index", class_name_ix);
+    println!("{:>19} {}", "Overlay Name Index", overlay_name_ix);
 }
 
 fn segdef_alignment(a: u8) -> &'static str {
@@ -404,6 +405,44 @@ fn segdef_combination(c: u8) -> &'static str {
         5 => "Stack",
         6 => "Common",
         _ => "Not defined",
+    }
+}
+
+fn print_record_pubdef(record: &Record, bytes: &Vec<u8>) {
+    let factor = if record.even {1} else {2};
+    let mut offset = record.start;
+
+    let bg_ix = le_value(offset, factor, bytes);
+    offset += factor;
+    let bs_ix = le_value(offset, factor, bytes);
+    offset += factor;
+
+    println!("{:>19} {}", "Base Group Index", bg_ix);
+    println!("{:>19} {}", "Base Segment Index", bs_ix);
+
+    if bs_ix == 0 {
+        let base_frame = le_value(offset, 2, bytes);
+        offset += 2;
+        println!("{:>19} {}", "Base Frame", base_frame);
+    }
+
+    let mut first = false;
+    while offset < record.end {
+        let name_len = bytes[offset] as usize;
+        offset += 1;
+        let name_bytes = &bytes[offset..offset+name_len];
+        let name = String::from_utf8_lossy(name_bytes);
+        offset += name_len;
+        let public_offset = le_value(offset, 2 * factor, bytes);
+        offset += 2 * factor;
+        
+        let type_index = le_value(offset, factor, bytes);
+        offset += factor;
+
+        println!("{:>19} name:          {}", if first {"Public Names"} else {""}, name);
+        println!("{:>19} public offset: {}", "", public_offset);
+        println!("{:>19} type index:    {}", "", type_index);
+        first = false;
     }
 }
 
