@@ -228,6 +228,7 @@ impl RecordType {
 
 struct Record {
     record_type: RecordType,
+    even: bool,
     //inclusive interval, start of the record data
     start: usize,
     //inclusive interval, end of the record data (excluding the checksum)
@@ -247,7 +248,12 @@ fn parse_records(content: &Vec<u8>) -> Vec<Record> {
             break;
         }
 
-        result.push(Record{record_type: RecordType::from_byte(record_type), start: ix + 3, end: ix + 3 + (record_len-1), len: (record_len-1)});
+        result.push(Record{
+            record_type: RecordType::from_byte(record_type), 
+            even: record_type % 2 == 0,
+            start: ix + 3, 
+            end: ix + 3 + (record_len-1), 
+            len: (record_len-1)});
         ix += record_len + 3;
     };
     result
@@ -296,7 +302,9 @@ fn print_records(records : Vec<&Record>, bytes: &Vec<u8>) {
             RecordType::THEADR => print_record_theadr(record, bytes),
             RecordType::COMENT => print_record_coment(record, bytes),
             RecordType::LNAMES => print_record_lnames(record, bytes),
-            _ => (), 
+            RecordType::SEGDEF => print_record_segdef(record, bytes),
+            RecordType::UNKNWN => (),
+            _ => println!("not implemented yet"), 
         }
         println!();
     }
@@ -330,10 +338,82 @@ fn print_record_lnames(record: &Record, bytes: &Vec<u8>) {
         let name_bytes = &bytes[offset+1..(offset+1+name_len)];
         let name = String::from_utf8_lossy(name_bytes);
         
-        println!("{:>8} {}", if first {"NAMES"} else {""}, name);
+        println!("{:>8} {}", if first {"names"} else {""}, name);
         first = false;
 
         offset += 1 + name_len;
     }
 }
 
+fn print_record_segdef(record: &Record, bytes: &Vec<u8>) {
+    let factor = if record.even {1} else {2};
+    let mut offset = record.start;
+    let attributes = bytes[offset];
+    let a = (attributes & 0xE0) >> 5;
+    let c = (attributes & 0x1C) >> 2;
+    let b = (attributes & 0x02) >> 1;
+    let p = attributes & 0x01;
+
+    println!("{:>19} alignment:   {} ({})", "attributes", a, segdef_alignment(a));
+    println!("{:>19} combination: {} ({})", "", c, segdef_combination(c));
+    println!("{:>19} big:         {}", "", b);
+    println!("{:>19} p:           {}", "", p);
+    offset += 1;
+    if a == 0 {
+        let frame_number = bytes[offset] as u16 | (bytes[offset+1] as u16) << 8;
+        offset += 2;
+        let frame_offset = bytes[offset];
+        offset += 1;
+        println!("{:>19} {}", "frame number", frame_number);
+        println!("{:>19} {}", "offset", frame_offset);
+    }
+
+    let seg_len = le_value(offset, 2 * factor, bytes);
+    offset += 2 * factor;
+    let seg_name_ix = le_value(offset, 1*factor, bytes);
+    offset += 1;
+    let class_name_ix = le_value(offset, 1*factor, bytes);
+    offset += 1;
+    let overlay_name_ix = le_value(offset, 1*factor, bytes);
+
+    println!("{:>19} {}", "length", seg_len);
+    println!("{:>19} {}", "seg name index", seg_name_ix);
+    println!("{:>19} {}", "class name index", class_name_ix);
+    println!("{:>19} {}", "overlay name index", overlay_name_ix);
+}
+
+fn segdef_alignment(a: u8) -> &'static str {
+    match a {
+        0 => "Absolute segment",
+        1 => "Relocatable, byte aligned",
+        2 => "Relocatable, word aligned",
+        3 => "Relocatable, paragraph aligned",
+        4 => "Relocatable, page aligned",
+        5 => "Reloctable, double word aligned",
+        6 => "Not supported",
+        _ => "Not defined",
+    }
+}
+
+fn segdef_combination(c: u8) -> &'static str {
+    match c {
+        0 => "Private",
+        1 => "Reserved",
+        2 | 4 | 7  => "Public",
+        3 => "Reserved",
+        5 => "Stack",
+        6 => "Common",
+        _ => "Not defined",
+    }
+}
+
+//helper
+
+fn le_value(offset: usize, len: usize, bytes: &Vec<u8>) -> u32 {
+    let mut r = 0;
+    for i in 0..len {
+        let v = bytes[offset+i] as u32;
+        r |= v << (i * 8);
+    }
+    r
+}
