@@ -541,7 +541,8 @@ fn dump_ledata(target_seg_ix: u32, records: &Vec<Record>, bytes: &Vec<u8>) {
 
             let stdout = io::stdout();
             let mut handle = stdout.lock();
-            handle.write_all(&bytes[offset..(record.end+1)]).unwrap();
+            let data = &bytes[offset..record.end];
+            handle.write_all(data).unwrap();
         }
     }
 
