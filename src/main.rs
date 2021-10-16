@@ -323,6 +323,7 @@ fn print_records(records : Vec<&Record>, bytes: &Vec<u8>) {
             RecordType::SEGDEF => print_record_segdef(record, bytes),
             RecordType::PUBDEF => print_record_pubdef(record, bytes),
             RecordType::LEDATA => print_record_ledata(record, bytes),
+            RecordType::MODEND => print_record_modend(record, bytes),
             RecordType::UNKNWN => (),
             _ => println!("not implemented yet"), 
         }
@@ -477,6 +478,26 @@ fn print_record_ledata(record: &Record, bytes: &Vec<u8>) {
     println!("{:>19} {}", "Segment Index", seg_ix);
     println!("{:>19} {}", "Data Offset", data_offset);
     println!("{:>19} {}", "Data", data_excerpt(offset, record.end - offset, bytes));
+}
+
+fn print_record_modend(record: &Record, bytes: &Vec<u8>) {
+
+    let module_type = le_value(record.start, 1, bytes);
+
+    let main_text =
+    if module_type & 0x80 != 0 {
+        "Is Main"
+    } else {
+         "No Main"
+    };
+
+    let start_text = if module_type & 0x40 != 0 {
+        "Has Start"
+    } else {
+        "No Start"
+    };
+
+    println!("{:>15} {} & {}", "Module Type", main_text, start_text);
 }
 
 //helper
