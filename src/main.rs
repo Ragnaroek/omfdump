@@ -1,11 +1,14 @@
-use std::io::Read;
+use std::io::{self, Read, Write};
 use std::fs::File;
+use std::str::FromStr;
 
 use clap::{Arg, App, ArgMatches};
 
 const FLAG_HEADERS : &str = "headers";
 const OPTION_RECORDS : &str = "records";
 const PARAM_OBJFILE : &str = "OBJFILE";
+const OPTION_DUMP_LEARGS : &str = "ledata";
+const SUB_DUMP : &str = "dump";
 
 fn main() -> std::io::Result<()> {
     let args = args();
@@ -15,6 +18,15 @@ fn main() -> std::io::Result<()> {
     file.read_to_end(&mut content)?;
 
     let records = parse_records(&content);    
+
+    if let Some(ref dump_args) = args.subcommand_matches(SUB_DUMP) {
+        if dump_args.is_present(OPTION_DUMP_LEARGS) {
+            let seg_ix = u32::from_str(dump_args.value_of(OPTION_DUMP_LEARGS).unwrap()).unwrap();
+            dump_ledata(seg_ix, &records, &content);
+        }
+
+        return Ok(())
+    }
 
     let mut print_default = true;
     if args.is_present(FLAG_HEADERS) {
@@ -54,6 +66,12 @@ fn args() -> ArgMatches {
         .value_delimiter(',') 
         .about("print record types listed (seperated by ,), use * for all records")
     )
+    .subcommand(App::new(SUB_DUMP)
+        .arg(Arg::new(OPTION_DUMP_LEARGS)
+            .short('l')
+            .long(OPTION_DUMP_LEARGS)
+            .takes_value(true)
+            .about("segment index")))
     .get_matches()
 }
 
@@ -485,4 +503,28 @@ fn data_excerpt(offset: usize, len: usize, bytes: &Vec<u8>) -> String {
         s = format!("{},...", &s);
     }
     format!("{}] {} bytes", &s, len)    
+}
+
+fn dump_ledata(target_seg_ix: u32, records: &Vec<Record>, bytes: &Vec<u8>) {
+    for record in records {
+        if record.record_type == RecordType::LEDATA {
+            let factor = if record.even {1} else {2};
+            let mut offset = record.start;
+        
+            let seg_ix = le_value(offset, factor, bytes);
+            if seg_ix != target_seg_ix {
+                continue;
+            }
+            offset += factor;
+            offset += 2 * factor; //skip data offset
+
+            let stdout = io::stdout();
+            let mut handle = stdout.lock();
+            handle.write_all(&bytes[offset..(record.end+1)]).unwrap();
+        }
+    }
+
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+    handle.flush().unwrap();
 }
