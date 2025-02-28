@@ -1,78 +1,94 @@
-use std::io::{self, Read, Write};
 use std::fs::File;
+use std::io::{self, Read, Write};
 use std::str::FromStr;
 
-use clap::{Arg, App, ArgMatches};
+use clap::{Arg, ArgMatches, Command};
 
-const FLAG_HEADERS : &str = "headers";
-const OPTION_RECORDS : &str = "records";
-const PARAM_OBJFILE : &str = "OBJFILE";
-const OPTION_DUMP_LEARGS : &str = "ledata";
-const SUB_DUMP : &str = "dump";
+const FLAG_HEADERS: &str = "headers";
+const OPTION_RECORDS: &str = "records";
+const PARAM_OBJFILE: &str = "OBJFILE";
+const OPTION_DUMP_LEARGS: &str = "ledata";
+const SUB_DUMP: &str = "dump";
 
 fn main() -> std::io::Result<()> {
     let args = args();
 
-    let mut file = File::open(args.value_of(PARAM_OBJFILE).expect("file name"))?;
+    let mut file = File::open(args.get_one::<String>(PARAM_OBJFILE).expect("file name"))?;
     let mut content = vec![];
     file.read_to_end(&mut content)?;
 
-    let records = parse_records(&content);    
+    let records = parse_records(&content);
 
     if let Some(ref dump_args) = args.subcommand_matches(SUB_DUMP) {
-        if dump_args.is_present(OPTION_DUMP_LEARGS) {
-            let seg_ix = u32::from_str(dump_args.value_of(OPTION_DUMP_LEARGS).unwrap()).unwrap();
+        if dump_args.contains_id(OPTION_DUMP_LEARGS) {
+            let seg_ix =
+                u32::from_str(&dump_args.get_one::<String>(OPTION_DUMP_LEARGS).unwrap()).unwrap();
             dump_ledata(seg_ix, &records, &content);
         }
 
-        return Ok(())
+        return Ok(());
     }
 
     let mut print_default = true;
-    if args.is_present(FLAG_HEADERS) {
+    if args.contains_id(FLAG_HEADERS) {
         print_default = false;
         print_headers(&records);
     }
 
-    if args.is_present(OPTION_RECORDS) {
+    if args.contains_id(OPTION_RECORDS) {
         print_default = false;
-        let values : Vec<&str> = args.values_of(OPTION_RECORDS).unwrap().collect();
+        let values: Vec<&String> = args
+            .get_many::<String>(OPTION_RECORDS)
+            .unwrap()
+            .collect::<Vec<_>>();
         let types = to_record_types(values).expect("illegal record type");
         let recs_to_print = filter_records(&records, &types);
         print_records(recs_to_print, &content);
     }
 
     if print_default {
-        print_records(filter_records(&records, &vec![RecordType::THEADR, RecordType::COMENT]), &content);
+        print_records(
+            filter_records(&records, &vec![RecordType::THEADR, RecordType::COMENT]),
+            &content,
+        );
     }
 
     Ok(())
 }
 
 fn args() -> ArgMatches {
- App::new("omfdump")
-    .version("0.1")
-    .arg(Arg::new(PARAM_OBJFILE)
-        .about("obj file to dump")
-        .required(true)
-        .index(1))
-    .arg(Arg::new(FLAG_HEADERS)
-        .short('h')
-        .long(FLAG_HEADERS)
-        .about("print record header information"))
-    .arg(Arg::new(OPTION_RECORDS)
-        .short('r')
-        .long(OPTION_RECORDS)
-        .value_delimiter(',') 
-        .about("print record types listed (seperated by ,), use * for all records")
-    )
-    .subcommand(App::new(SUB_DUMP)
-        .arg(Arg::new(OPTION_DUMP_LEARGS)
-            .short('l')
-            .long(OPTION_DUMP_LEARGS)
-            .takes_value(true)
-            .about("segment index")))
-    .get_matches()
+    Command::new("omfdump")
+        .version("0.1")
+        .arg(
+            Arg::new(PARAM_OBJFILE)
+                .required(true)
+                .index(1)
+                .help("obj file to dump"),
+        )
+        .arg(
+            Arg::new(FLAG_HEADERS)
+                .short('h')
+                .long(FLAG_HEADERS)
+                .help("print record header information"),
+        )
+        .arg(
+            Arg::new(OPTION_RECORDS)
+                .short('r')
+                .long(OPTION_RECORDS)
+                .value_delimiter(',')
+                .help("print record types listed (seperated by ,), use * for all records"),
+        )
+        .subcommand(
+            Command::new(SUB_DUMP).arg(
+                Arg::new(OPTION_DUMP_LEARGS)
+                    .short('l')
+                    .long(OPTION_DUMP_LEARGS)
+                    .num_args(0)
+                    .help("segment index"),
+            ),
+        )
+        .disable_help_flag(true)
+        .get_matches()
 }
 
 #[derive(PartialEq, Eq, Copy, Clone)]
@@ -108,36 +124,36 @@ enum RecordType {
     LIBEND,
 }
 
-static ALL_TYPES : [RecordType; 29] = [
+static ALL_TYPES: [RecordType; 29] = [
     RecordType::UNKNWN,
-RecordType::THEADR,
-RecordType::LHEADR,
-RecordType::COMENT,
-RecordType::MODEND,
-RecordType::EXTDEF,
-RecordType::PUBDEF,
-RecordType::LINNUM,
-RecordType::LNAMES,
-RecordType::SEGDEF,
-RecordType::GRPDEF,
-RecordType::FIXUPP,
-RecordType::LEDATA,
-RecordType::LIDATA,
-RecordType::COMDEF,
-RecordType::BAKPAT,
-RecordType::LEXTDEF,
-RecordType::LPUBDEF,
-RecordType::LCOMDEF,
-RecordType::CEXTDEF,
-RecordType::COMDAT,
-RecordType::LINSYM,
-RecordType::ALIAS,
-RecordType::NBKPAT,
-RecordType::LLNAMES,
-RecordType::VERNUM,
-RecordType::VENDEXT,
-RecordType::LIBHEAD,
-RecordType::LIBEND
+    RecordType::THEADR,
+    RecordType::LHEADR,
+    RecordType::COMENT,
+    RecordType::MODEND,
+    RecordType::EXTDEF,
+    RecordType::PUBDEF,
+    RecordType::LINNUM,
+    RecordType::LNAMES,
+    RecordType::SEGDEF,
+    RecordType::GRPDEF,
+    RecordType::FIXUPP,
+    RecordType::LEDATA,
+    RecordType::LIDATA,
+    RecordType::COMDEF,
+    RecordType::BAKPAT,
+    RecordType::LEXTDEF,
+    RecordType::LPUBDEF,
+    RecordType::LCOMDEF,
+    RecordType::CEXTDEF,
+    RecordType::COMDAT,
+    RecordType::LINSYM,
+    RecordType::ALIAS,
+    RecordType::NBKPAT,
+    RecordType::LLNAMES,
+    RecordType::VERNUM,
+    RecordType::VENDEXT,
+    RecordType::LIBHEAD,
+    RecordType::LIBEND,
 ];
 
 impl RecordType {
@@ -171,7 +187,7 @@ impl RecordType {
             0xCE => RecordType::VENDEXT,
             0xF0 => RecordType::LIBHEAD,
             0xF1 => RecordType::LIBEND,
-            _ => RecordType::UNKNWN, 
+            _ => RecordType::UNKNWN,
         }
     }
 
@@ -211,35 +227,35 @@ impl RecordType {
 
     fn from_string(str: &str) -> RecordType {
         match str {
-        "THEADR" => RecordType::THEADR,
-        "LHEADR" => RecordType::LHEADR,
-        "COMENT" => RecordType::COMENT,
-        "MODEND" => RecordType::MODEND,
-        "EXTDEF" => RecordType::EXTDEF,
-        "PUBDEF" => RecordType::PUBDEF,
-        "LINNUM" => RecordType::LINNUM,
-        "LNAMES" => RecordType::LNAMES,
-        "SEGDEF" => RecordType::SEGDEF,
-        "GRPDEF" => RecordType::GRPDEF,
-        "FIXUPP" => RecordType::FIXUPP,
-        "LEDATA" => RecordType::LEDATA,
-        "LIDATA" => RecordType::LIDATA,
-        "COMDEF" => RecordType::COMDEF,
-        "BAKPAT" => RecordType::BAKPAT,
-        "LEXTDEF" => RecordType::LEXTDEF,
-        "LPUBDEF" => RecordType::LPUBDEF,
-        "LCOMDEF" => RecordType::LCOMDEF,
-        "CEXTDEF" => RecordType::CEXTDEF,
-        "COMDAT" => RecordType::COMDAT,
-        "LINSYM" => RecordType::LINSYM,
-        "ALIAS" => RecordType::ALIAS,
-        "NBKPAT" => RecordType::NBKPAT,
-        "LLNAMES" => RecordType::LLNAMES,
-        "VERNUM" => RecordType::VERNUM,
-        "VENDEXT" => RecordType::VENDEXT,
-        "LIBHEAD" => RecordType::LIBHEAD,
-        "LIBEND" => RecordType::LIBEND,
-        _ => RecordType::UNKNWN,
+            "THEADR" => RecordType::THEADR,
+            "LHEADR" => RecordType::LHEADR,
+            "COMENT" => RecordType::COMENT,
+            "MODEND" => RecordType::MODEND,
+            "EXTDEF" => RecordType::EXTDEF,
+            "PUBDEF" => RecordType::PUBDEF,
+            "LINNUM" => RecordType::LINNUM,
+            "LNAMES" => RecordType::LNAMES,
+            "SEGDEF" => RecordType::SEGDEF,
+            "GRPDEF" => RecordType::GRPDEF,
+            "FIXUPP" => RecordType::FIXUPP,
+            "LEDATA" => RecordType::LEDATA,
+            "LIDATA" => RecordType::LIDATA,
+            "COMDEF" => RecordType::COMDEF,
+            "BAKPAT" => RecordType::BAKPAT,
+            "LEXTDEF" => RecordType::LEXTDEF,
+            "LPUBDEF" => RecordType::LPUBDEF,
+            "LCOMDEF" => RecordType::LCOMDEF,
+            "CEXTDEF" => RecordType::CEXTDEF,
+            "COMDAT" => RecordType::COMDAT,
+            "LINSYM" => RecordType::LINSYM,
+            "ALIAS" => RecordType::ALIAS,
+            "NBKPAT" => RecordType::NBKPAT,
+            "LLNAMES" => RecordType::LLNAMES,
+            "VERNUM" => RecordType::VERNUM,
+            "VENDEXT" => RecordType::VENDEXT,
+            "LIBHEAD" => RecordType::LIBHEAD,
+            "LIBEND" => RecordType::LIBEND,
+            _ => RecordType::UNKNWN,
         }
     }
 }
@@ -252,7 +268,7 @@ struct Record {
     //inclusive interval, end of the record data (excluding the checksum)
     end: usize,
     //end-start, kept here for convenience (does not include the checksum)
-    len: usize, 
+    len: usize,
 }
 
 fn parse_records(content: &Vec<u8>) -> Vec<Record> {
@@ -260,37 +276,37 @@ fn parse_records(content: &Vec<u8>) -> Vec<Record> {
     let mut ix = 0;
     while ix < content.len() {
         let record_type = content[ix];
-        let record_len = ((content[ix+2] as usize) << 8) | content[ix+1] as usize; //-1 for excluding the checksum
+        let record_len = ((content[ix + 2] as usize) << 8) | content[ix + 1] as usize; //-1 for excluding the checksum
 
         if record_len == 0 {
             break;
         }
 
-        result.push(Record{
-            record_type: RecordType::from_byte(record_type), 
+        result.push(Record {
+            record_type: RecordType::from_byte(record_type),
             even: record_type % 2 == 0,
-            start: ix + 3, 
-            end: ix + 3 + (record_len-1), 
-            len: (record_len-1)});
+            start: ix + 3,
+            end: ix + 3 + (record_len - 1),
+            len: (record_len - 1),
+        });
         ix += record_len + 3;
-    };
+    }
     result
 }
 
-fn to_record_types(names: Vec<&str>) -> Result<Vec<RecordType>, String> {
+fn to_record_types(names: Vec<&String>) -> Result<Vec<RecordType>, String> {
     let mut result = Vec::with_capacity(names.len());
     for str in names {
-
         if str == "*" {
             for rec_type in &ALL_TYPES {
                 if !result.contains(rec_type) {
                     result.push(*rec_type);
-                } 
+                }
             }
             break;
         }
 
-        let rec_type = RecordType::from_string(str);
+        let rec_type = RecordType::from_string(&str);
         if rec_type == RecordType::UNKNWN {
             return Err(format!("Unknown type: {}", str));
         }
@@ -298,25 +314,32 @@ fn to_record_types(names: Vec<&str>) -> Result<Vec<RecordType>, String> {
             result.push(rec_type);
         }
     }
-    return Ok(result)
+    return Ok(result);
 }
 
 fn filter_records<'a>(records: &'a Vec<Record>, types: &'a Vec<RecordType>) -> Vec<&'a Record> {
-    records.iter().filter(|rec| types.contains(&rec.record_type)).collect()
+    records
+        .iter()
+        .filter(|rec| types.contains(&rec.record_type))
+        .collect()
 }
 
-fn print_headers(records : &Vec<Record>) {
+fn print_headers(records: &Vec<Record>) {
     println!("Idx    Type Size");
     for (ix, record) in records.iter().enumerate() {
-        println!("{:>3} {:>7} {:04x}", ix, record.record_type.to_string(), record.len);
+        println!(
+            "{:>3} {:>7} {:04x}",
+            ix,
+            record.record_type.to_string(),
+            record.len
+        );
     }
 }
 
-fn print_records(records : Vec<&Record>, bytes: &Vec<u8>) {
-
+fn print_records(records: Vec<&Record>, bytes: &Vec<u8>) {
     for record in records {
         println!("{}:", record.record_type.to_string());
-        match record.record_type {    
+        match record.record_type {
             RecordType::THEADR => print_record_theadr(record, bytes),
             RecordType::COMENT => print_record_coment(record, bytes),
             RecordType::LNAMES => print_record_lnames(record, bytes),
@@ -325,7 +348,7 @@ fn print_records(records : Vec<&Record>, bytes: &Vec<u8>) {
             RecordType::LEDATA => print_record_ledata(record, bytes),
             RecordType::MODEND => print_record_modend(record, bytes),
             RecordType::UNKNWN => (),
-            _ => println!("not implemented yet"), 
+            _ => println!("not implemented yet"),
         }
         println!();
     }
@@ -334,15 +357,15 @@ fn print_records(records : Vec<&Record>, bytes: &Vec<u8>) {
 //Record prints
 fn print_record_theadr(record: &Record, bytes: &Vec<u8>) {
     let str_size = bytes[record.start] as usize;
-    let str_bytes = &bytes[record.start+1..record.start+1+str_size];
+    let str_bytes = &bytes[record.start + 1..record.start + 1 + str_size];
     let str = String::from_utf8_lossy(str_bytes);
     println!("{:>7} {}", "Name", str);
 }
 
 fn print_record_coment(record: &Record, bytes: &Vec<u8>) {
     let cmt_type = bytes[record.start];
-    let cmt_class = bytes[record.start+1];
-    let cmt_str = &bytes[record.start+2..(record.start+(record.len-3))];
+    let cmt_class = bytes[record.start + 1];
+    let cmt_str = &bytes[record.start + 2..(record.start + (record.len - 3))];
 
     println!("{:>12} {}", "NP", cmt_type & 0x80);
     println!("{:>12} {}", "NL", cmt_type & 0x40);
@@ -356,10 +379,10 @@ fn print_record_lnames(record: &Record, bytes: &Vec<u8>) {
 
     while offset < record.end {
         let name_len = bytes[offset] as usize;
-        let name_bytes = &bytes[offset+1..(offset+1+name_len)];
+        let name_bytes = &bytes[offset + 1..(offset + 1 + name_len)];
         let name = String::from_utf8_lossy(name_bytes);
-        
-        println!("{:>8} {}", if first {"Names"} else {""}, name);
+
+        println!("{:>8} {}", if first { "Names" } else { "" }, name);
         first = false;
 
         offset += 1 + name_len;
@@ -367,7 +390,7 @@ fn print_record_lnames(record: &Record, bytes: &Vec<u8>) {
 }
 
 fn print_record_segdef(record: &Record, bytes: &Vec<u8>) {
-    let factor = if record.even {1} else {2};
+    let factor = if record.even { 1 } else { 2 };
     let mut offset = record.start;
     let attributes = bytes[offset];
     let a = (attributes & 0xE0) >> 5;
@@ -375,13 +398,18 @@ fn print_record_segdef(record: &Record, bytes: &Vec<u8>) {
     let b = (attributes & 0x02) >> 1;
     let p = attributes & 0x01;
 
-    println!("{:>19} alignment:   {} ({})", "Attributes", a, segdef_alignment(a));
+    println!(
+        "{:>19} alignment:   {} ({})",
+        "Attributes",
+        a,
+        segdef_alignment(a)
+    );
     println!("{:>19} combination: {} ({})", "", c, segdef_combination(c));
     println!("{:>19} big:         {}", "", b);
     println!("{:>19} p:           {}", "", p);
     offset += 1;
     if a == 0 {
-        let frame_number = bytes[offset] as u16 | (bytes[offset+1] as u16) << 8;
+        let frame_number = bytes[offset] as u16 | (bytes[offset + 1] as u16) << 8;
         offset += 2;
         let frame_offset = bytes[offset];
         offset += 1;
@@ -391,11 +419,11 @@ fn print_record_segdef(record: &Record, bytes: &Vec<u8>) {
 
     let seg_len = le_value(offset, 2 * factor, bytes);
     offset += 2 * factor;
-    let seg_name_ix = le_value(offset, 1*factor, bytes);
+    let seg_name_ix = le_value(offset, 1 * factor, bytes);
     offset += 1;
-    let class_name_ix = le_value(offset, 1*factor, bytes);
+    let class_name_ix = le_value(offset, 1 * factor, bytes);
     offset += 1;
-    let overlay_name_ix = le_value(offset, 1*factor, bytes);
+    let overlay_name_ix = le_value(offset, 1 * factor, bytes);
 
     println!("{:>19} {}", "Length", seg_len);
     println!("{:>19} {}", "Seg Name Index", seg_name_ix);
@@ -420,7 +448,7 @@ fn segdef_combination(c: u8) -> &'static str {
     match c {
         0 => "Private",
         1 => "Reserved",
-        2 | 4 | 7  => "Public",
+        2 | 4 | 7 => "Public",
         3 => "Reserved",
         5 => "Stack",
         6 => "Common",
@@ -429,7 +457,7 @@ fn segdef_combination(c: u8) -> &'static str {
 }
 
 fn print_record_pubdef(record: &Record, bytes: &Vec<u8>) {
-    let factor = if record.even {1} else {2};
+    let factor = if record.even { 1 } else { 2 };
     let mut offset = record.start;
 
     let bg_ix = le_value(offset, factor, bytes);
@@ -450,16 +478,20 @@ fn print_record_pubdef(record: &Record, bytes: &Vec<u8>) {
     while offset < record.end {
         let name_len = bytes[offset] as usize;
         offset += 1;
-        let name_bytes = &bytes[offset..offset+name_len];
+        let name_bytes = &bytes[offset..offset + name_len];
         let name = String::from_utf8_lossy(name_bytes);
         offset += name_len;
         let public_offset = le_value(offset, 2 * factor, bytes);
         offset += 2 * factor;
-        
+
         let type_index = le_value(offset, factor, bytes);
         offset += factor;
 
-        println!("{:>19} name:          {}", if first {"Public Names"} else {""}, name);
+        println!(
+            "{:>19} name:          {}",
+            if first { "Public Names" } else { "" },
+            name
+        );
         println!("{:>19} public offset: {}", "", public_offset);
         println!("{:>19} type index:    {}", "", type_index);
         first = false;
@@ -467,7 +499,7 @@ fn print_record_pubdef(record: &Record, bytes: &Vec<u8>) {
 }
 
 fn print_record_ledata(record: &Record, bytes: &Vec<u8>) {
-    let factor = if record.even {1} else {2};
+    let factor = if record.even { 1 } else { 2 };
     let mut offset = record.start;
 
     let seg_ix = le_value(offset, factor, bytes);
@@ -477,18 +509,20 @@ fn print_record_ledata(record: &Record, bytes: &Vec<u8>) {
 
     println!("{:>19} {}", "Segment Index", seg_ix);
     println!("{:>19} {}", "Data Offset", data_offset);
-    println!("{:>19} {}", "Data", data_excerpt(offset, record.end - offset, bytes));
+    println!(
+        "{:>19} {}",
+        "Data",
+        data_excerpt(offset, record.end - offset, bytes)
+    );
 }
 
 fn print_record_modend(record: &Record, bytes: &Vec<u8>) {
-
     let module_type = le_value(record.start, 1, bytes);
 
-    let main_text =
-    if module_type & 0x80 != 0 {
+    let main_text = if module_type & 0x80 != 0 {
         "Is Main"
     } else {
-         "No Main"
+        "No Main"
     };
 
     let start_text = if module_type & 0x40 != 0 {
@@ -505,33 +539,33 @@ fn print_record_modend(record: &Record, bytes: &Vec<u8>) {
 fn le_value(offset: usize, len: usize, bytes: &Vec<u8>) -> u32 {
     let mut r = 0;
     for i in 0..len {
-        let v = bytes[offset+i] as u32;
+        let v = bytes[offset + i] as u32;
         r |= v << (i * 8);
     }
     r
 }
 
 fn data_excerpt(offset: usize, len: usize, bytes: &Vec<u8>) -> String {
-    let mut s : String = "[".to_string();
+    let mut s: String = "[".to_string();
     let num_ex = usize::min(len, 5);
     for i in 0..num_ex {
-        s = format!("{}{:#04x}", &s, bytes[offset+i]);
-        if i != (num_ex-1) {
+        s = format!("{}{:#04x}", &s, bytes[offset + i]);
+        if i != (num_ex - 1) {
             s = format!("{},", &s);
         }
     }
     if len > num_ex {
         s = format!("{},...", &s);
     }
-    format!("{}] {} bytes", &s, len)    
+    format!("{}] {} bytes", &s, len)
 }
 
 fn dump_ledata(target_seg_ix: u32, records: &Vec<Record>, bytes: &Vec<u8>) {
     for record in records {
         if record.record_type == RecordType::LEDATA {
-            let factor = if record.even {1} else {2};
+            let factor = if record.even { 1 } else { 2 };
             let mut offset = record.start;
-        
+
             let seg_ix = le_value(offset, factor, bytes);
             if seg_ix != target_seg_ix {
                 continue;
